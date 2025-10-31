@@ -57,8 +57,10 @@ if uploaded_file is not None:
 
     st.success("✅ Training data uploaded successfully!")
 
-    # Show preview
+    # Show preview (first 5 rows)
     st.dataframe(df.head(), use_container_width=True, height=250)
+    
+    # Expandable section to show full dataset
     with st.expander("🔍 View full dataset"):
         st.dataframe(df, use_container_width=True, height=400)
 
@@ -120,6 +122,14 @@ if uploaded_file is not None:
         st.markdown("### 🔢 Numeric Summary")
         if len(num_cols) > 0:
             st.dataframe(df[num_cols].describe().T, use_container_width=True, height=250)
+            st.markdown(
+                """
+                <div style='font-size:30px; color:#E65100; font-weight:500; margin-top:10px;'>
+                📘 This shows <b>mean, standard deviation, min, max,</b> and <b>quartiles</b> for numeric columns.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         else:
             st.info("No numeric columns found.")
 
@@ -130,10 +140,18 @@ if uploaded_file is not None:
                 index=["Unique Values", "Most Frequent"],
             ).T
             st.dataframe(cat_summary)
+            st.markdown(
+                """
+                <div style='font-size:30px; color:#E65100; font-weight:500; margin-top:10px;'>
+                📗 Shows <b>number of unique values</b> and the <b>most frequent category</b> for each categorical column.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         else:
             st.info("No categorical columns found.")
 
-    # ---------------------- HISTOGRAMS ----------------------
+    # ---------------------- HISTOGRAM SECTION ----------------------
     if st.checkbox("Show Histograms (Numeric Columns)"):
         cols_to_plot = st.multiselect("Choose columns to plot", num_cols, default=num_cols[:4])
         for col in cols_to_plot:
@@ -144,15 +162,34 @@ if uploaded_file is not None:
             st.pyplot(fig_large)
             plt.close(fig_large)
 
-    # ---------------------- CORRELATION ----------------------
+            st.markdown(
+                f"""
+                <div style='font-size:30px; color:#E65100; font-weight:500; margin-top:10px;'>
+                🧠 <b>Interpretation:</b> Histogram for <b>{col}</b> — peaks show where most values lie.<br>
+                Skew left/right indicates bias; narrow peak = consistent values; wide spread = high variability.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    # ---------------------- CORRELATION HEATMAP ----------------------
     if st.checkbox("Show Correlation Heatmap"):
-        if len(num_cols) >= 2:
+        if len(num_cols) < 2:
+            st.info("Need at least two numeric columns for correlation heatmap.")
+        else:
             fig, ax = plt.subplots(figsize=(15, 5))
             sns.heatmap(df[num_cols].corr(), annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
             ax.set_title("Correlation Heatmap", fontsize=13)
             st.pyplot(fig)
-        else:
-            st.info("Need at least two numeric columns for correlation heatmap.")
+            st.markdown(
+                """
+                <div style='font-size:30px; color:#E65100; font-weight:500; margin-top:5px;'>
+                🧠 <b>Interpretation:</b> Heatmap shows relationships between numeric columns.<br>
+                +1 = strong positive, -1 = strong negative, 0 = no linear relation.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     # ---------------------- TARGET SELECTION ----------------------
     if len(df.columns) > 1:
@@ -162,7 +199,6 @@ if uploaded_file is not None:
         st.warning("⚠️ Not enough columns to choose a target variable.")
         st.stop()
 
-    # Determine task type
     if df[target_column].dtype in ["int64", "float64"]:
         st.session_state.is_classification = False
         st.info("📈 Detected problem type: Regression (numeric target).")
@@ -176,45 +212,45 @@ if uploaded_file is not None:
             df = df.drop(columns=["Name"])
 
         n_samples = len(df)
-        # Adaptive speed
-        if n_samples > 2000:
-            fast_models_cls = ["lr", "rf", "dt", "knn"]
-            fast_models_reg = ["lr", "rf", "dt", "ridge"]
-            st.warning("⚡ Large dataset detected — using fast-mode model comparison.")
-        else:
-            fast_models_cls = fast_models_reg = None
+        n_folds = min(5, max(2, n_samples // 2))
+        n_folds = min(n_folds, max(2, n_samples - 1))
 
         with st.spinner("⏳ Setting up and comparing models..."):
             if st.session_state.is_classification:
-                cls_setup(data=df, target=target_column, verbose=False, index=False, session_id=42)
-                if fast_models_cls:
-                    best_model = cls_compare(include=fast_models_cls, fold=2, n_select=1)
+                counts = df[target_column].value_counts()
+                df_filtered = df[df[target_column].isin(counts[counts >= 2].index)].reset_index(drop=True)
+                if df_filtered.empty:
+                    st.error("❌ Not enough samples per class (need at least 2 per class).")
                 else:
-                    best_model = cls_compare(fold=3, n_select=1)
-                leaderboard = cls_pull()
-                st.subheader("🏆 All Model Leaderboard (with Model Names)")
-                st.dataframe(leaderboard, use_container_width=True)
+                    cls_setup(data=df_filtered, target=target_column, verbose=False, index=False, session_id=42)
+                    best_model = cls_compare(fold=n_folds, n_select=1)
+                    leaderboard = cls_pull()
+                    if 'Model' not in leaderboard.columns:
+                        leaderboard.reset_index(inplace=True)
+                        leaderboard.rename(columns={'index': 'Model'}, inplace=True)
+                    st.subheader("🏆 All Model Leaderboard (with Model Names)")
+                    st.dataframe(leaderboard, use_container_width=True)
 
-                try:
-                    tuned = cls_tune(best_model, optimize="Accuracy", fold=2)
-                except Exception:
-                    tuned = best_model
-                st.session_state.trained_model = tuned
-                metrics = cls_pull()
-                st.session_state.last_metrics = metrics
-                st.session_state.train_columns = df.drop(columns=[target_column]).columns.tolist()
+                    try:
+                        tuned = cls_tune(best_model, optimize="Accuracy", fold=n_folds)
+                    except Exception:
+                        tuned = best_model
+                    st.session_state.trained_model = tuned
+                    metrics = cls_pull()
+                    st.session_state.last_metrics = metrics
+                    st.session_state.train_columns = df_filtered.drop(columns=[target_column]).columns.tolist()
             else:
                 reg_setup(data=df, target=target_column, verbose=False, index=False, session_id=42)
-                if fast_models_reg:
-                    best_model = reg_compare(include=fast_models_reg, fold=2, n_select=1)
-                else:
-                    best_model = reg_compare(fold=3, n_select=1)
+                best_model = reg_compare(fold=n_folds, n_select=1)
                 leaderboard = reg_pull()
+                if 'Model' not in leaderboard.columns:
+                    leaderboard.reset_index(inplace=True)
+                    leaderboard.rename(columns={'index': 'Model'}, inplace=True)
                 st.subheader("🏆 All Model Leaderboard (with Model Names)")
                 st.dataframe(leaderboard, use_container_width=True)
 
                 try:
-                    tuned = reg_tune(best_model, optimize="R2", fold=2)
+                    tuned = reg_tune(best_model, optimize="R2", fold=n_folds)
                 except Exception:
                     tuned = best_model
                 st.session_state.trained_model = tuned
@@ -223,6 +259,7 @@ if uploaded_file is not None:
                 st.session_state.train_columns = df.drop(columns=[target_column]).columns.tolist()
 
         st.success("✅ Model training finished.")
+
         st.subheader("🏁 Best Model Performance (Fold Results)")
         st.dataframe(st.session_state.last_metrics, use_container_width=True)
 
@@ -237,7 +274,9 @@ if uploaded_file is not None:
         try:
             fi = st.session_state.trained_model.feature_importances_
             feat_names = st.session_state.train_columns
-            fi_df = pd.DataFrame({"feature": feat_names, "importance": fi}).sort_values("importance", ascending=False)
+            fi_df = pd.DataFrame(
+                {"feature": feat_names, "importance": fi}
+            ).sort_values("importance", ascending=False)
             st.dataframe(fi_df.head(10))
         except Exception:
             st.info("Feature importance not available for this model.")
@@ -257,6 +296,7 @@ if new_file is not None:
 
         st.write("📋 New Data Preview:")
         st.dataframe(new_data.head())
+
         with st.expander("🔍 View full new data"):
             st.dataframe(new_data, use_container_width=True, height=400)
 
