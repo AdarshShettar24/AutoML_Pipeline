@@ -56,7 +56,14 @@ if uploaded_file is not None:
         st.stop()
 
     st.success("✅ Training data uploaded successfully!")
+
+    # Show preview (first 5 rows)
     st.dataframe(df.head(), use_container_width=True, height=250)
+    
+    # Expandable section to show full dataset
+    with st.expander("🔍 View full dataset"):
+        st.dataframe(df, use_container_width=True, height=400)
+
     st.write("📋 **Columns detected:**", list(df.columns))
 
     # ---------------------- DATA CLEANING SUMMARY ----------------------
@@ -101,9 +108,10 @@ if uploaded_file is not None:
                 df[col].fillna(df[col].mode().iloc[0], inplace=True)
         st.success("✨ Missing values filled (median for numeric, mode for categorical).")
 
-        # ✅ Display cleaned dataset
-        st.markdown("### 🧾 Cleaned Dataset Preview")
-        st.dataframe(df.head(10), use_container_width=True, height=250)
+        st.subheader("🧾 Cleaned Data Preview")
+        st.dataframe(df.head(), use_container_width=True, height=250)
+        with st.expander("🔍 View full cleaned dataset"):
+            st.dataframe(df, use_container_width=True, height=400)
 
     # ---------------------- EDA ----------------------
     st.subheader("📊 Exploratory Data Analysis (EDA)")
@@ -143,7 +151,7 @@ if uploaded_file is not None:
         else:
             st.info("No categorical columns found.")
 
-    # ---------------------- UPDATED HISTOGRAM SECTION ----------------------
+    # ---------------------- HISTOGRAM SECTION ----------------------
     if st.checkbox("Show Histograms (Numeric Columns)"):
         cols_to_plot = st.multiselect("Choose columns to plot", num_cols, default=num_cols[:4])
         for col in cols_to_plot:
@@ -163,14 +171,6 @@ if uploaded_file is not None:
                 """,
                 unsafe_allow_html=True,
             )
-
-            with st.expander(f"🔍 View smaller version of {col}"):
-                fig_small, ax_small = plt.subplots(figsize=(4, 2.5))
-                sns.histplot(df[col].dropna(), kde=True, color="skyblue", ax=ax_small)
-                ax_small.set_title(f"Distribution of {col}", fontsize=12)
-                fig_small.tight_layout()
-                st.pyplot(fig_small)
-                plt.close(fig_small)
 
     # ---------------------- CORRELATION HEATMAP ----------------------
     if st.checkbox("Show Correlation Heatmap"):
@@ -296,6 +296,9 @@ if new_file is not None:
 
         st.write("📋 New Data Preview:")
         st.dataframe(new_data.head())
+
+        with st.expander("🔍 View full new data"):
+            st.dataframe(new_data, use_container_width=True, height=400)
 
         if st.button("✨ Predict"):
             with st.spinner("🔍 Generating predictions..."):
