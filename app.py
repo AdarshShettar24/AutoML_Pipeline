@@ -310,6 +310,24 @@ if new_file is not None:
             st.subheader("🧾 Predictions")
             st.dataframe(preds)
 
+            # 🧠 Added AI Explanation Section (new)
+            st.markdown(
+                """
+                ---
+                <div style='background-color:#E3F2FD; padding:15px; border-radius:10px;'>
+                <h3>🧠 <b>AI Explanation — How Predictions Are Made</b></h3>
+                <ul style='font-size:18px;'>
+                    <li>The model learns relationships between different features in your dataset (for example, <b>average rating</b>, <b>installs</b>, <b>reviews</b>, or <b>growth metrics</b>).</li>
+                    <li>It identifies which patterns most strongly indicate <b>success</b> or <b>failure</b>.</li>
+                    <li>During prediction, it applies the same learned logic to new data and outputs a likely result.</li>
+                    <li>Example: Apps with higher ratings, more installs, and steady growth are predicted as <b>Success</b>, while low-rated or less popular ones are marked <b>Failure</b>.</li>
+                    <li>PyCaret automatically selected and optimized the best-performing ML model to achieve this.</li>
+                </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
             csv = preds.to_csv(index=False).encode()
             st.download_button(
                 "📥 Download Predictions CSV",
