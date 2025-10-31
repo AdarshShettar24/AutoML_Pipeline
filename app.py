@@ -315,5 +315,5 @@ if new_file is not None:
                 "📥 Download Predictions CSV",
                 data=csv,
                 file_name="predictions.csv",
-                mime="text/csv"
+                mime="text/csv",
             )
