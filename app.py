@@ -47,6 +47,7 @@ if uploaded_file is not None:
 
     try:
         df = pd.read_csv(stringio, index_col=False)
+        df = df.astype(str)  # ✅ Fix: ensures consistent data types for Streamlit
     except Exception as e:
         st.error(f"❌ Error reading CSV: {e}")
         st.stop()
@@ -59,8 +60,8 @@ if uploaded_file is not None:
 
     # Show preview (first 5 rows)
     st.dataframe(df.head(), use_container_width=True, height=250)
-    
-    # Expandable section to show full dataset
+
+    # Expandable full dataset
     with st.expander("🔍 View full dataset"):
         st.dataframe(df, use_container_width=True, height=400)
 
@@ -122,14 +123,6 @@ if uploaded_file is not None:
         st.markdown("### 🔢 Numeric Summary")
         if len(num_cols) > 0:
             st.dataframe(df[num_cols].describe().T, use_container_width=True, height=250)
-            st.markdown(
-                """
-                <div style='font-size:30px; color:#E65100; font-weight:500; margin-top:10px;'>
-                📘 This shows <b>mean, standard deviation, min, max,</b> and <b>quartiles</b> for numeric columns.
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
         else:
             st.info("No numeric columns found.")
 
@@ -140,14 +133,6 @@ if uploaded_file is not None:
                 index=["Unique Values", "Most Frequent"],
             ).T
             st.dataframe(cat_summary)
-            st.markdown(
-                """
-                <div style='font-size:30px; color:#E65100; font-weight:500; margin-top:10px;'>
-                📗 Shows <b>number of unique values</b> and the <b>most frequent category</b> for each categorical column.
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
         else:
             st.info("No categorical columns found.")
 
@@ -156,40 +141,22 @@ if uploaded_file is not None:
         cols_to_plot = st.multiselect("Choose columns to plot", num_cols, default=num_cols[:4])
         for col in cols_to_plot:
             fig_large, ax_large = plt.subplots(figsize=(15, 5))
-            sns.histplot(df[col].dropna(), kde=True, color="skyblue", ax=ax_large)
+            sns.histplot(df[col].dropna().astype(float), kde=True, color="skyblue", ax=ax_large)
             ax_large.set_title(f"Distribution of {col}", fontsize=18)
             fig_large.tight_layout()
             st.pyplot(fig_large)
             plt.close(fig_large)
-
-            st.markdown(
-                f"""
-                <div style='font-size:30px; color:#E65100; font-weight:500; margin-top:10px;'>
-                🧠 <b>Interpretation:</b> Histogram for <b>{col}</b> — peaks show where most values lie.<br>
-                Skew left/right indicates bias; narrow peak = consistent values; wide spread = high variability.
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
 
     # ---------------------- CORRELATION HEATMAP ----------------------
     if st.checkbox("Show Correlation Heatmap"):
         if len(num_cols) < 2:
             st.info("Need at least two numeric columns for correlation heatmap.")
         else:
+            corr_df = df[num_cols].astype(float).corr()
             fig, ax = plt.subplots(figsize=(15, 5))
-            sns.heatmap(df[num_cols].corr(), annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
+            sns.heatmap(corr_df, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
             ax.set_title("Correlation Heatmap", fontsize=13)
             st.pyplot(fig)
-            st.markdown(
-                """
-                <div style='font-size:30px; color:#E65100; font-weight:500; margin-top:5px;'>
-                🧠 <b>Interpretation:</b> Heatmap shows relationships between numeric columns.<br>
-                +1 = strong positive, -1 = strong negative, 0 = no linear relation.
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
 
     # ---------------------- TARGET SELECTION ----------------------
     if len(df.columns) > 1:
@@ -274,9 +241,7 @@ if uploaded_file is not None:
         try:
             fi = st.session_state.trained_model.feature_importances_
             feat_names = st.session_state.train_columns
-            fi_df = pd.DataFrame(
-                {"feature": feat_names, "importance": fi}
-            ).sort_values("importance", ascending=False)
+            fi_df = pd.DataFrame({"feature": feat_names, "importance": fi}).sort_values("importance", ascending=False)
             st.dataframe(fi_df.head(10))
         except Exception:
             st.info("Feature importance not available for this model.")
@@ -291,8 +256,10 @@ if new_file is not None:
     else:
         try:
             new_data = pd.read_csv(io.StringIO(new_file.getvalue().decode("utf-8")))
+            new_data = new_data.astype(str)  # ✅ Fix: consistent data types
         except UnicodeDecodeError:
             new_data = pd.read_csv(io.StringIO(new_file.getvalue().decode("latin1")))
+            new_data = new_data.astype(str)  # ✅ Fix
 
         st.write("📋 New Data Preview:")
         st.dataframe(new_data.head())
@@ -315,5 +282,5 @@ if new_file is not None:
                 "📥 Download Predictions CSV",
                 data=csv,
                 file_name="predictions.csv",
-                mime="text/csv",
+                mime="text/csv"
             )
