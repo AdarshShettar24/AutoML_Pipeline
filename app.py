@@ -11,12 +11,14 @@ from pycaret.classification import (
     compare_models as cls_compare,
     predict_model as cls_predict,
     pull as cls_pull,
+    tune_model as cls_tune,
 )
 from pycaret.regression import (
     setup as reg_setup,
     compare_models as reg_compare,
     predict_model as reg_predict,
     pull as reg_pull,
+    tune_model as reg_tune,
 )
 
 warnings.filterwarnings("ignore")
@@ -53,14 +55,11 @@ if uploaded_file is not None:
         st.warning("⚠️ The uploaded CSV file is empty.")
         st.stop()
 
-    # 🔧 Fix: Convert mixed types to string to prevent serialization errors
-    df = df.astype(str)
-
     st.success("✅ Training data uploaded successfully!")
 
     # Show preview (first 5 rows)
     st.dataframe(df.head(), use_container_width=True, height=250)
-
+    
     # Expandable section to show full dataset
     with st.expander("🔍 View full dataset"):
         st.dataframe(df, use_container_width=True, height=400)
@@ -163,6 +162,16 @@ if uploaded_file is not None:
             st.pyplot(fig_large)
             plt.close(fig_large)
 
+            st.markdown(
+                f"""
+                <div style='font-size:30px; color:#E65100; font-weight:500; margin-top:10px;'>
+                🧠 <b>Interpretation:</b> Histogram for <b>{col}</b> — peaks show where most values lie.<br>
+                Skew left/right indicates bias; narrow peak = consistent values; wide spread = high variability.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
     # ---------------------- CORRELATION HEATMAP ----------------------
     if st.checkbox("Show Correlation Heatmap"):
         if len(num_cols) < 2:
@@ -172,6 +181,15 @@ if uploaded_file is not None:
             sns.heatmap(df[num_cols].corr(), annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
             ax.set_title("Correlation Heatmap", fontsize=13)
             st.pyplot(fig)
+            st.markdown(
+                """
+                <div style='font-size:30px; color:#E65100; font-weight:500; margin-top:5px;'>
+                🧠 <b>Interpretation:</b> Heatmap shows relationships between numeric columns.<br>
+                +1 = strong positive, -1 = strong negative, 0 = no linear relation.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     # ---------------------- TARGET SELECTION ----------------------
     if len(df.columns) > 1:
@@ -193,13 +211,9 @@ if uploaded_file is not None:
         if "Name" in df.columns:
             df = df.drop(columns=["Name"])
 
-        # ⚡ Speed Optimization 1: Limit dataset size
-        if len(df) > 2000:
-            st.warning("⚠️ Large dataset detected — using 2000 random samples for faster training.")
-            df = df.sample(2000, random_state=42)
-
-        # ⚡ Speed Optimization 2: Fewer folds for faster cross-validation
-        n_folds = 3
+        n_samples = len(df)
+        n_folds = min(5, max(2, n_samples // 2))
+        n_folds = min(n_folds, max(2, n_samples - 1))
 
         with st.spinner("⏳ Setting up and comparing models..."):
             if st.session_state.is_classification:
@@ -208,7 +222,7 @@ if uploaded_file is not None:
                 if df_filtered.empty:
                     st.error("❌ Not enough samples per class (need at least 2 per class).")
                 else:
-                    cls_setup(data=df_filtered, target=target_column, verbose=False, session_id=42)
+                    cls_setup(data=df_filtered, target=target_column, verbose=False, index=False, session_id=42)
                     best_model = cls_compare(fold=n_folds, n_select=1)
                     leaderboard = cls_pull()
                     if 'Model' not in leaderboard.columns:
@@ -217,15 +231,16 @@ if uploaded_file is not None:
                     st.subheader("🏆 All Model Leaderboard (with Model Names)")
                     st.dataframe(leaderboard, use_container_width=True)
 
-                    # ⚡ Speed Optimization 3: Skip tuning for faster results
-                    tuned = best_model
-
+                    try:
+                        tuned = cls_tune(best_model, optimize="Accuracy", fold=n_folds)
+                    except Exception:
+                        tuned = best_model
                     st.session_state.trained_model = tuned
                     metrics = cls_pull()
                     st.session_state.last_metrics = metrics
                     st.session_state.train_columns = df_filtered.drop(columns=[target_column]).columns.tolist()
             else:
-                reg_setup(data=df, target=target_column, verbose=False, session_id=42)
+                reg_setup(data=df, target=target_column, verbose=False, index=False, session_id=42)
                 best_model = reg_compare(fold=n_folds, n_select=1)
                 leaderboard = reg_pull()
                 if 'Model' not in leaderboard.columns:
@@ -234,13 +249,17 @@ if uploaded_file is not None:
                 st.subheader("🏆 All Model Leaderboard (with Model Names)")
                 st.dataframe(leaderboard, use_container_width=True)
 
-                tuned = best_model
+                try:
+                    tuned = reg_tune(best_model, optimize="R2", fold=n_folds)
+                except Exception:
+                    tuned = best_model
                 st.session_state.trained_model = tuned
                 metrics = reg_pull()
                 st.session_state.last_metrics = metrics
                 st.session_state.train_columns = df.drop(columns=[target_column]).columns.tolist()
 
         st.success("✅ Model training finished.")
+
         st.subheader("🏁 Best Model Performance (Fold Results)")
         st.dataframe(st.session_state.last_metrics, use_container_width=True)
 
@@ -255,7 +274,9 @@ if uploaded_file is not None:
         try:
             fi = st.session_state.trained_model.feature_importances_
             feat_names = st.session_state.train_columns
-            fi_df = pd.DataFrame({"feature": feat_names, "importance": fi}).sort_values("importance", ascending=False)
+            fi_df = pd.DataFrame(
+                {"feature": feat_names, "importance": fi}
+            ).sort_values("importance", ascending=False)
             st.dataframe(fi_df.head(10))
         except Exception:
             st.info("Feature importance not available for this model.")
