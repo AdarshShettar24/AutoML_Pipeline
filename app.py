@@ -101,6 +101,10 @@ if uploaded_file is not None:
                 df[col].fillna(df[col].mode().iloc[0], inplace=True)
         st.success("✨ Missing values filled (median for numeric, mode for categorical).")
 
+        # ✅ Display cleaned dataset
+        st.markdown("### 🧾 Cleaned Dataset Preview")
+        st.dataframe(df.head(10), use_container_width=True, height=250)
+
     # ---------------------- EDA ----------------------
     st.subheader("📊 Exploratory Data Analysis (EDA)")
     num_cols = df.select_dtypes(include=["int64", "float64"]).columns.tolist()
@@ -310,3 +314,4 @@ if new_file is not None:
                 file_name="predictions.csv",
                 mime="text/csv",
             )
+
