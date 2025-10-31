@@ -270,36 +270,6 @@ if new_file is not None:
             st.subheader("🧾 Predictions")
             st.dataframe(preds)
 
-            # ---------------------- AI EXPLANATION ----------------------
-            target = st.session_state.target_column
-            if st.session_state.is_classification:
-                st.markdown(
-                    f"""
-                    <div style='font-size:22px; color:#2E7D32; font-weight:500; margin-top:10px;'>
-                    🤖 <b>AI Explanation:</b><br>
-                    The model predicts <b>{target}</b> (a categorical outcome).<br>
-                    It learns from input features such as ratings, installs, and other variables to classify each record into categories 
-                    like <b>'Success'</b> or <b>'Failure'</b> based on the dataset.<br>
-                    Higher or lower values in certain columns (for example, ratings or downloads) 
-                    influence the final decision boundary the model creates to assign labels.
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    f"""
-                    <div style='font-size:22px; color:#1565C0; font-weight:500; margin-top:10px;'>
-                    🤖 <b>AI Explanation:</b><br>
-                    The model predicts a <b>numeric value for {target}</b> (Regression).<br>
-                    It analyzes how features such as numeric or categorical inputs affect this target.<br>
-                    For instance, higher input values (like size, rating, or installs) might increase or decrease 
-                    the predicted {target}, depending on their learned relationships.
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
             csv = preds.to_csv(index=False).encode()
             st.download_button(
                 "📥 Download Predictions CSV",
