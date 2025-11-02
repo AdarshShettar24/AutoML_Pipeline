@@ -28,7 +28,7 @@ st.set_page_config(layout="wide", page_title="🤖 Smart AutoML Dashboard")
 st.title("🤖 Smart AutoML Dashboard")
 st.markdown(
     "Upload a dataset, explore and clean it, train an AutoML model (PyCaret), "
-    "and get predictions with ease."
+    "and get predictions easily."
 )
 
 # ---------------------- SESSION STATE ----------------------
@@ -87,6 +87,98 @@ if uploaded_file is not None:
 
     st.write("📋 **Columns detected:**", list(df.columns))
 
+    # ---------------------- DATA CLEANING SUMMARY ----------------------
+    st.subheader("🧹 Data Cleaning Summary")
+    missing = df.isnull().sum()
+    missing = missing[missing > 0]
+    if not missing.empty:
+        st.write("**Missing Values Detected:**")
+        st.dataframe(missing.rename("Missing Count"))
+    else:
+        st.success("✅ No missing values detected!")
+
+    duplicates = df.duplicated().sum()
+    if duplicates > 0:
+        st.warning(f"⚠️ Found {duplicates} duplicate rows.")
+    else:
+        st.success("✅ No duplicate rows found!")
+
+    st.write("**Column Data Types:**")
+    st.dataframe(df.dtypes.reset_index().rename(columns={"index": "Column Name", 0: "Data Type"}),
+                 use_container_width=True, height=250)
+
+    # ---------------------- AUTO CLEANING ----------------------
+    if st.checkbox("🧠 Auto-clean: remove duplicates & fill missing values (recommended)"):
+        initial_rows = len(df)
+        df = df.drop_duplicates()
+        removed = initial_rows - len(df)
+        if removed > 0:
+            st.warning(f"🧾 Removed {removed} duplicate rows.")
+        else:
+            st.success("✅ No duplicate rows removed.")
+
+        numeric_cols = detect_numeric_columns(df, min_non_na=1)
+        df = safe_cast_numeric(df, numeric_cols)
+        if len(numeric_cols) > 0:
+            df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].median())
+
+        cat_cols = [c for c in df.columns if c not in numeric_cols]
+        for col in cat_cols:
+            if df[col].isnull().sum() > 0:
+                try:
+                    df[col] = df[col].fillna(df[col].mode().iloc[0])
+                except Exception:
+                    df[col] = df[col].fillna("")
+
+        st.success("✨ Missing values filled (median for numeric, mode for categorical).")
+
+        st.subheader("🧾 Cleaned Data Preview")
+        st.dataframe(df.head(), use_container_width=True, height=250)
+        with st.expander("🔍 View full cleaned dataset"):
+            st.dataframe(df, use_container_width=True, height=400)
+
+    # ---------------------- EDA ----------------------
+    st.subheader("📊 Exploratory Data Analysis (EDA)")
+    num_cols = detect_numeric_columns(df, min_non_na=1)
+    cat_cols = [c for c in df.columns if c not in num_cols]
+
+    if st.checkbox("📈 Show Summary Statistics"):
+        if len(num_cols) > 0:
+            df_num = df[num_cols].apply(lambda s: pd.to_numeric(s, errors="coerce"))
+            st.dataframe(df_num.describe().T, use_container_width=True, height=250)
+        if len(cat_cols) > 0:
+            cat_summary = pd.DataFrame(
+                {col: [df[col].nunique(dropna=True),
+                       df[col].mode(dropna=True)[0] if not df[col].mode(dropna=True).empty else ""] for col in cat_cols},
+                index=["Unique Values", "Most Frequent"]
+            ).T
+            st.dataframe(cat_summary)
+
+    # ---------------------- HISTOGRAM SECTION ----------------------
+    if st.checkbox("📊 Show Histograms"):
+        # Sample only if dataset is huge
+        plot_df = df.sample(min(len(df), 2000), random_state=42) if len(df) > 5000 else df
+        cols_to_plot = st.multiselect("Choose columns to plot", num_cols, default=num_cols[:4])
+        for col in cols_to_plot:
+            series = pd.to_numeric(plot_df[col], errors="coerce").dropna()
+            if not series.empty:
+                fig, ax = plt.subplots(figsize=(12, 5))
+                sns.histplot(series, kde=True, ax=ax)
+                ax.set_title(f"Distribution of {col}")
+                st.pyplot(fig)
+                plt.close(fig)
+
+    # ---------------------- CORRELATION HEATMAP ----------------------
+    if st.checkbox("📉 Show Correlation Heatmap"):
+        if len(num_cols) < 2:
+            st.info("Need at least two numeric columns.")
+        else:
+            heatmap_df = df.sample(min(len(df), 3000), random_state=42) if len(df) > 5000 else df
+            corr_df = heatmap_df[num_cols].apply(lambda s: pd.to_numeric(s, errors="coerce")).corr()
+            fig, ax = plt.subplots(figsize=(15, 6))
+            sns.heatmap(corr_df, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
+            st.pyplot(fig)
+
     # ---------------------- TARGET SELECTION ----------------------
     if len(df.columns) > 1:
         target_column = st.selectbox("🎯 Select Target Column for Prediction", df.columns)
@@ -110,97 +202,49 @@ if uploaded_file is not None:
             df[numeric_cols] = df[numeric_cols].astype(float)
 
         n_samples = len(df)
-
-        # ⚡ Smart speed modes
-        if n_samples <= 2000:
-            fast_mode = True
-            n_folds = 3
-            turbo_mode = True
-            st.info("⚡ Small dataset detected — Fast Mode enabled (lightweight models only).")
-        elif n_samples <= 5000:
-            fast_mode = False
-            n_folds = 3
-            turbo_mode = True
-            st.info("⚡ Medium dataset detected — using 3-fold CV (turbo mode).")
-        else:
-            fast_mode = False
-            n_folds = 2
-            turbo_mode = True
+        if n_samples > 8000:
             st.warning("⚡ Large dataset detected — sampling 3000 rows for faster training.")
             df = df.sample(3000, random_state=42)
+            n_folds = 2
+        elif n_samples > 3000:
+            n_folds = 3
+            st.info("⚡ Medium dataset — reduced folds to speed up training.")
+        else:
+            n_folds = 5
 
-        with st.spinner("⏳ Setting up and training models..."):
+        with st.spinner("⏳ Setting up and comparing models..."):
             if st.session_state.is_classification:
-                cls_setup(
-                    data=df,
-                    target=target_column,
-                    verbose=False,
-                    index=False,
-                    session_id=42,
-                    fold=n_folds,
-                    fix_imbalance=False,
-                    feature_selection=False,
-                    profile=False,
-                )
-
-                if fast_mode:
-                    from pycaret.classification import create_model
-                    models_to_try = ["lr", "dt", "knn", "nb"]
-                    best_model = max(
-                        [create_model(m) for m in models_to_try],
-                        key=lambda m: cls_pull()["Accuracy"].iloc[-1],
-                    )
-                else:
-                    best_model = cls_compare(fold=n_folds, turbo=turbo_mode)
-
+                cls_setup(data=df, target=target_column, verbose=False, index=False, session_id=42)
+                best_model = cls_compare(fold=n_folds, turbo=True)
                 leaderboard = cls_pull()
-                st.subheader("🏆 Model Leaderboard")
-                st.dataframe(leaderboard, use_container_width=True)
-
-                st.session_state.trained_model = best_model
-                st.session_state.last_metrics = leaderboard
-                st.session_state.train_columns = df.drop(columns=[target_column]).columns.tolist()
-
             else:
-                reg_setup(
-                    data=df,
-                    target=target_column,
-                    verbose=False,
-                    index=False,
-                    session_id=42,
-                    fold=n_folds,
-                    feature_selection=False,
-                    profile=False,
-                )
-
-                if fast_mode:
-                    from pycaret.regression import create_model
-                    models_to_try = ["lr", "dt", "lasso", "ridge"]
-                    best_model = max(
-                        [create_model(m) for m in models_to_try],
-                        key=lambda m: reg_pull()["R2"].iloc[-1],
-                    )
-                else:
-                    best_model = reg_compare(fold=n_folds, turbo=turbo_mode)
-
+                reg_setup(data=df, target=target_column, verbose=False, index=False, session_id=42)
+                best_model = reg_compare(fold=n_folds, turbo=True)
                 leaderboard = reg_pull()
-                st.subheader("🏆 Model Leaderboard")
-                st.dataframe(leaderboard, use_container_width=True)
 
-                st.session_state.trained_model = best_model
-                st.session_state.last_metrics = leaderboard
-                st.session_state.train_columns = df.drop(columns=[target_column]).columns.tolist()
-
+        st.session_state.trained_model = best_model
+        st.session_state.last_metrics = leaderboard
+        st.session_state.train_columns = df.drop(columns=[target_column]).columns.tolist()
         st.success("✅ Model training completed!")
 
-        st.subheader("🏁 Best Model Performance")
-        st.dataframe(st.session_state.last_metrics, use_container_width=True)
+        st.subheader("🏁 Model Leaderboard")
+        st.dataframe(leaderboard, use_container_width=True)
 
         try:
-            model_name = type(st.session_state.trained_model).__name__
+            model_name = type(best_model).__name__
             st.markdown(f"### 🔎 Selected Best Model: **{model_name}**")
         except Exception:
-            st.markdown("### 🔎 Selected Model: (not available)")
+            st.markdown("### 🔎 Model Info Not Available")
+
+        # Feature importance
+        st.subheader("🌟 Feature Importance (if available)")
+        try:
+            fi = best_model.feature_importances_
+            feat_names = st.session_state.train_columns
+            fi_df = pd.DataFrame({"Feature": feat_names, "Importance": fi}).sort_values("Importance", ascending=False)
+            st.dataframe(fi_df.head(10))
+        except Exception:
+            st.info("Feature importance not available for this model.")
 
 # ---------------------- PREDICTION SECTION ----------------------
 st.subheader("🔮 Make Predictions on New Data")
@@ -231,7 +275,6 @@ if new_file is not None:
                     preds = cls_predict(st.session_state.trained_model, data=new_data)
                 else:
                     preds = reg_predict(st.session_state.trained_model, data=new_data)
-
             st.subheader("🧾 Predictions")
             st.dataframe(preds)
             csv = preds.to_csv(index=False).encode()
