@@ -156,7 +156,6 @@ if uploaded_file is not None:
 
     # ---------------------- HISTOGRAM SECTION ----------------------
     if st.checkbox("📊 Show Histograms"):
-        # Sample only if dataset is huge
         plot_df = df.sample(min(len(df), 2000), random_state=42) if len(df) > 5000 else df
         cols_to_plot = st.multiselect("Choose columns to plot", num_cols, default=num_cols[:4])
         for col in cols_to_plot:
@@ -246,6 +245,7 @@ if uploaded_file is not None:
         except Exception:
             st.info("Feature importance not available for this model.")
 
+
 # ---------------------- PREDICTION SECTION ----------------------
 st.subheader("🔮 Make Predictions on New Data")
 new_file = st.file_uploader("📂 Upload New CSV for Prediction", type=["csv"], key="new_csv")
@@ -273,19 +273,26 @@ if new_file is not None:
             with st.spinner("🔍 Generating predictions..."):
                 if st.session_state.is_classification:
                     preds = cls_predict(st.session_state.trained_model, data=new_data)
-                    # If prediction values look like probabilities, convert them to 0/1 labels
+
+                    # If prediction values look like probabilities, convert them to readable labels
                     if "prediction_label" in preds.columns:
                         preds["Diabetes_Prediction"] = preds["prediction_label"].apply(
                             lambda x: "Diabetic" if x >= 0.5 else "Non-Diabetic"
-                            )
-elif "Label" in preds.columns:
-    preds["Diabetes_Prediction"] = preds["Label"].apply(
-        lambda x: "Diabetic" if x == 1 else "Non-Diabetic"
-    )
+                        )
+                    elif "Label" in preds.columns:
+                        preds["Diabetes_Prediction"] = preds["Label"].apply(
+                            lambda x: "Diabetic" if x == 1 else "Non-Diabetic"
+                        )
 
                 else:
                     preds = reg_predict(st.session_state.trained_model, data=new_data)
+
             st.subheader("🧾 Predictions")
             st.dataframe(preds)
             csv = preds.to_csv(index=False).encode()
-            st.download_button("📥 Download Predictions CSV", data=csv, file_name="predictions.csv", mime="text/csv")
+            st.download_button(
+                "📥 Download Predictions CSV",
+                data=csv,
+                file_name="predictions.csv",
+                mime="text/csv",
+            )
