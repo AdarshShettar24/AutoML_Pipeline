@@ -273,6 +273,16 @@ if new_file is not None:
             with st.spinner("🔍 Generating predictions..."):
                 if st.session_state.is_classification:
                     preds = cls_predict(st.session_state.trained_model, data=new_data)
+                    # If prediction values look like probabilities, convert them to 0/1 labels
+                    if "prediction_label" in preds.columns:
+                        preds["Diabetes_Prediction"] = preds["prediction_label"].apply(
+                            lambda x: "Diabetic" if x >= 0.5 else "Non-Diabetic"
+                            )
+elif "Label" in preds.columns:
+    preds["Diabetes_Prediction"] = preds["Label"].apply(
+        lambda x: "Diabetic" if x == 1 else "Non-Diabetic"
+    )
+
                 else:
                     preds = reg_predict(st.session_state.trained_model, data=new_data)
             st.subheader("🧾 Predictions")
