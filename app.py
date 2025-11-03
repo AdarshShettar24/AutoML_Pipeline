@@ -224,13 +224,14 @@ if uploaded_file is not None:
         n_samples = len(df)
 
         # --- Aggressive Speed Optimization ---
+        # Keep folds low and sample aggressively for quick training
         if n_samples > 5000:
             st.warning("⚡ Large dataset detected — sampling 2000 rows for faster training.")
             df = df.sample(2000, random_state=42)
             n_folds = 2
         else:
-            # Use 3 folds for quicker comparison
-            n_folds = 3
+            # Use 3 folds for quicker comparison for most datasets
+            n_folds = 3 
         
         st.info(f"⚡ Using {n_folds}-fold cross-validation and a reduced model set for quick results.")
 
@@ -324,18 +325,52 @@ if new_file is not None:
                 if st.session_state.is_classification:
                     preds = cls_predict(st.session_state.trained_model, data=new_data)
 
-                    # Standardize prediction column names for display
+                    # 1. Standardize prediction column names for display
                     if "prediction_label" in preds.columns:
-                        preds = preds.rename(columns={"prediction_label": "Prediction"})
+                        preds = preds.rename(columns={"prediction_label": "Predicted_Class"})
                     elif "Label" in preds.columns:
-                        preds = preds.rename(columns={"Label": "Prediction"})
-                    
-                    # Custom example prediction conversion (can be removed if not needed)
-                    # if "Diabetes_Prediction" not in preds.columns and "Prediction" in preds.columns:
-                    #     preds["Diabetes_Prediction"] = preds["Prediction"].apply(
-                    #         lambda x: "Diabetic" if x == 1 or x == '1' or x=='Yes' else "Non-Diabetic"
-                    #     )
+                        preds = preds.rename(columns={"Label": "Predicted_Class"})
 
+                    # 2. Add Interpreted_Result column (Diabetic/Non-Diabetic/Likely)
+                    target_col_name = st.session_state.get("target_column", "")
+                    
+                    if 'Predicted_Class' in preds.columns:
+                        # Check if the target name suggests a 'Diabetic' problem (user-specific request)
+                        # We look for keywords like 'diab', 'outcome', or 'health' in the target name
+                        is_diabetes_problem = any(sub in target_col_name.lower() for sub in ['diab', 'outcome', 'health'])
+
+                        # Attempt to find the probability column for the positive class (usually the last score column)
+                        score_cols = [c for c in preds.columns if c.startswith('prediction_score_')]
+                        positive_score_col = score_cols[-1] if score_cols else None
+                        
+                        def get_interpretation(row):
+                            predicted_class = row['Predicted_Class']
+                            
+                            # Default interpretation if not a known diabetes problem
+                            interpretation = f"Class {predicted_class}"
+                            
+                            # Custom interpretation for diabetes-like problems
+                            if is_diabetes_problem:
+                                # Map 1/True/Yes to the positive outcome
+                                if predicted_class in [1, '1', 'Yes', True]:
+                                    interpretation = "Diabetic"
+                                else:
+                                    interpretation = "Non-Diabetic"
+
+                                # Check for "Likely to get Diabetic" using probability scores
+                                if positive_score_col in row:
+                                    # Get the probability of the positive class (e.g., class 1)
+                                    prob_positive = row[positive_score_col]
+                                    
+                                    # Borderline prediction: close to 50% threshold (0.4 to 0.6)
+                                    if prob_positive >= 0.4 and prob_positive <= 0.6:
+                                        interpretation = "Likely to get Diabetic (Borderline Score)"
+                                        
+                            return interpretation
+
+                        preds['Interpreted_Result'] = preds.apply(get_interpretation, axis=1)
+                        st.success("Added 'Predicted_Class' and 'Interpreted_Result' columns for clarity!")
+                        
                 else:
                     preds = reg_predict(st.session_state.trained_model, data=new_data)
                     # Standardize prediction column names for display
