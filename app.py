@@ -156,7 +156,6 @@ if uploaded_file is not None:
 
     # ---------------------- HISTOGRAM SECTION ----------------------
     if st.checkbox("📊 Show Histograms"):
-        # Sample only if dataset is huge
         plot_df = df.sample(min(len(df), 2000), random_state=42) if len(df) > 5000 else df
         cols_to_plot = st.multiselect("Choose columns to plot", num_cols, default=num_cols[:4])
         for col in cols_to_plot:
@@ -214,11 +213,28 @@ if uploaded_file is not None:
 
         with st.spinner("⏳ Setting up and comparing models..."):
             if st.session_state.is_classification:
-                cls_setup(data=df, target=target_column, verbose=False, index=False, session_id=42)
+                cls_setup(
+                    data=df,
+                    target=target_column,
+                    verbose=False,
+                    html=False,
+                    silent=True,
+                    session_id=42,
+                    n_jobs=1,  # prevents freezing due to multithreading
+                    fix_imbalance=False,
+                )
                 best_model = cls_compare(fold=n_folds, turbo=True)
                 leaderboard = cls_pull()
             else:
-                reg_setup(data=df, target=target_column, verbose=False, index=False, session_id=42)
+                reg_setup(
+                    data=df,
+                    target=target_column,
+                    verbose=False,
+                    html=False,
+                    silent=True,
+                    session_id=42,
+                    n_jobs=1,
+                )
                 best_model = reg_compare(fold=n_folds, turbo=True)
                 leaderboard = reg_pull()
 
@@ -236,7 +252,6 @@ if uploaded_file is not None:
         except Exception:
             st.markdown("### 🔎 Model Info Not Available")
 
-        # Feature importance
         st.subheader("🌟 Feature Importance (if available)")
         try:
             fi = best_model.feature_importances_
