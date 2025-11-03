@@ -213,39 +213,14 @@ if uploaded_file is not None:
             n_folds = 5
 
         with st.spinner("⏳ Setting up and comparing models..."):
-    if st.session_state.is_classification:
-        cls_setup(
-            data=df,
-            target=target_column,
-            verbose=False,
-            html=False,
-            silent=True,
-            session_id=42,
-            fold_strategy="kfold",
-            fold=n_folds,
-            normalize=True,
-            transformation=False,
-            feature_selection=False
-        )
-        best_model = cls_compare(fold=n_folds, turbo=True)
-        leaderboard = cls_pull()
-    else:
-        reg_setup(
-            data=df,
-            target=target_column,
-            verbose=False,
-            html=False,
-            silent=True,
-            session_id=42,
-            fold_strategy="kfold",
-            fold=n_folds,
-            normalize=True,
-            transformation=False,
-            feature_selection=False
-        )
-        best_model = reg_compare(fold=n_folds, turbo=True)
-        leaderboard = reg_pull()
-
+            if st.session_state.is_classification:
+                cls_setup(data=df, target=target_column, verbose=False, index=False, session_id=42)
+                best_model = cls_compare(fold=n_folds, turbo=True)
+                leaderboard = cls_pull()
+            else:
+                reg_setup(data=df, target=target_column, verbose=False, index=False, session_id=42)
+                best_model = reg_compare(fold=n_folds, turbo=True)
+                leaderboard = reg_pull()
 
         st.session_state.trained_model = best_model
         st.session_state.last_metrics = leaderboard
