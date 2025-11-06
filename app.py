@@ -24,31 +24,24 @@ from pycaret.regression import (
 warnings.filterwarnings("ignore")
 st.set_page_config(layout="wide", page_title="🤖 Smart AutoML Dashboard")
 
-# --- FAST MODEL CONFIGURATION (New Addition for Speed) ---
-# By including only a few high-performing and fast models, we drastically reduce training time.
 FAST_CLASSIFIERS = ["lr", "dt", "rf", "lightgbm", "xgboost", "catboost"]
 FAST_REGRESSORS = ["lr", "dt", "rf", "lightgbm", "ridge", "xgboost", "catboost"]
-# Set a threshold for what is considered a "large" dataset
 LARGE_DATASET_THRESHOLD = 5000
 
-# ---------------------- APP TITLE ----------------------
 st.title("🤖 Smart AutoML Dashboard")
 st.markdown(
     "Upload a dataset, explore and clean it, train an AutoML model (PyCaret), "
     "and get predictions easily."
 )
 
-# ---------------------- SESSION STATE ----------------------
 for key in ["trained_model", "is_classification", "target_column", "last_metrics", "train_columns"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
 
-# ---------- Helper utilities ----------
 def detect_numeric_columns(df, min_non_na=1):
     numeric_cols = []
     for c in df.columns:
-        # Check how many non-NA values can be converted to numeric
         non_na = pd.to_numeric(df[c], errors="coerce").notna().sum()
         if non_na >= min_non_na:
             numeric_cols.append(c)
@@ -62,21 +55,14 @@ def safe_cast_numeric(df, cols):
 
 
 def detect_target_type(df, target_col):
-    # Determine if the target is mostly numeric (Regression) or categorical (Classification)
     num_nonnull = pd.to_numeric(df[target_col], errors="coerce").notna().sum()
     prop_numeric = num_nonnull / max(1, len(df))
-    # If the target column has fewer than 10 unique non-numeric values, treat as classification
     is_mostly_numeric = prop_numeric >= 0.9
-    
-    # Simple heuristic: If it has many unique values AND is mostly numeric, it's regression.
-    # We invert the check: If it has many unique values AND is mostly numeric, it's regression.
     if is_mostly_numeric and df[target_col].nunique(dropna=True) > 25:
-        return False # Regression
-    
-    return True # Classification
+        return False
+    return True
 
 
-# ---------------------- FILE UPLOAD ----------------------
 uploaded_file = st.file_uploader("📂 Upload Training CSV File", type=["csv"])
 
 if uploaded_file is not None:
@@ -104,7 +90,6 @@ if uploaded_file is not None:
 
     st.write("📋 **Columns detected:**", list(df.columns))
 
-    # ---------------------- DATA CLEANING SUMMARY ----------------------
     st.subheader("🧹 Data Cleaning Summary")
     missing = df.isnull().sum()
     missing = missing[missing > 0]
@@ -124,7 +109,6 @@ if uploaded_file is not None:
     st.dataframe(df.dtypes.reset_index().rename(columns={"index": "Column Name", 0: "Data Type"}),
                  use_container_width=True, height=250)
 
-    # ---------------------- AUTO CLEANING ----------------------
     if st.checkbox("🧠 Auto-clean: remove duplicates & fill missing values (recommended)"):
         initial_rows = len(df)
         df = df.drop_duplicates()
@@ -137,17 +121,15 @@ if uploaded_file is not None:
         numeric_cols = detect_numeric_columns(df, min_non_na=1)
         df = safe_cast_numeric(df, numeric_cols)
         if len(numeric_cols) > 0:
-            # Fill numeric with median
             df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].median())
 
         cat_cols = [c for c in df.columns if c not in numeric_cols]
         for col in cat_cols:
             if df[col].isnull().sum() > 0:
                 try:
-                    # Fill categorical with mode
                     df[col] = df[col].fillna(df[col].mode().iloc[0])
                 except Exception:
-                    df[col] = df[col].fillna("") # Fallback for edge cases
+                    df[col] = df[col].fillna("")
 
         st.success("✨ Missing values filled (median for numeric, mode for categorical).")
 
@@ -156,7 +138,6 @@ if uploaded_file is not None:
         with st.expander("🔍 View full cleaned dataset"):
             st.dataframe(df, use_container_width=True, height=400)
 
-    # ---------------------- EDA ----------------------
     st.subheader("📊 Exploratory Data Analysis (EDA)")
     num_cols = detect_numeric_columns(df, min_non_na=1)
     cat_cols = [c for c in df.columns if c not in num_cols]
@@ -173,9 +154,7 @@ if uploaded_file is not None:
             ).T
             st.dataframe(cat_summary)
 
-    # ---------------------- HISTOGRAM SECTION ----------------------
     if st.checkbox("📊 Show Histograms"):
-        # Sample data for faster plotting
         plot_df = df.sample(min(len(df), 2000), random_state=42) if len(df) > 5000 else df
         cols_to_plot = st.multiselect("Choose columns to plot", num_cols, default=num_cols[:4])
         for col in cols_to_plot:
@@ -187,19 +166,16 @@ if uploaded_file is not None:
                 st.pyplot(fig)
                 plt.close(fig)
 
-    # ---------------------- CORRELATION HEATMAP ----------------------
     if st.checkbox("📉 Show Correlation Heatmap"):
         if len(num_cols) < 2:
             st.info("Need at least two numeric columns.")
         else:
-            # Sample data for faster plotting
             heatmap_df = df.sample(min(len(df), 3000), random_state=42) if len(df) > 5000 else df
             corr_df = heatmap_df[num_cols].apply(lambda s: pd.to_numeric(s, errors="coerce")).corr()
             fig, ax = plt.subplots(figsize=(15, 6))
             sns.heatmap(corr_df, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
             st.pyplot(fig)
 
-    # ---------------------- TARGET SELECTION ----------------------
     if len(df.columns) > 1:
         target_column = st.selectbox("🎯 Select Target Column for Prediction", df.columns)
         st.session_state.target_column = target_column
@@ -211,12 +187,10 @@ if uploaded_file is not None:
     st.session_state.is_classification = is_class
     st.info("📈 Problem Type: " + ("Classification" if is_class else "Regression"))
 
-    # ---------------------- TRAINING ----------------------
     if st.button("🚀 Train Model"):
         if "Name" in df.columns:
             df = df.drop(columns=["Name"])
 
-        # Ensure types are correct before pycaret setup
         numeric_cols = detect_numeric_columns(df)
         df = safe_cast_numeric(df, numeric_cols)
         if len(numeric_cols) > 0:
@@ -224,38 +198,30 @@ if uploaded_file is not None:
 
         n_samples = len(df)
 
-        # --- Dynamic Speed Optimization Logic ---
         if n_samples >= LARGE_DATASET_THRESHOLD:
             st.warning(f"⚡ Large dataset detected (>{LARGE_DATASET_THRESHOLD} rows) — sampling 2000 rows for faster training.")
             df_train = df.sample(2000, random_state=42)
             n_folds = 2
-            # Use the fast subset of models
             models_to_include = FAST_CLASSIFIERS if st.session_state.is_classification else FAST_REGRESSORS
             st.info(f"⚡ Using **{len(models_to_include)}** high-speed models and **{n_folds}** folds.")
         else:
-            # Use the full dataset and compare all available models (by setting include=None)
             df_train = df
             n_folds = 3
-            models_to_include = None # PyCaret compares all models by default
+            models_to_include = None
             st.info(f"⚡ Using **all available** models and **{n_folds}** folds for comprehensive comparison.")
-        
-        # NOTE: Using the *sampled* DataFrame for training if the dataset is large
         
         with st.spinner("⏳ Setting up and comparing models..."):
             if st.session_state.is_classification:
                 cls_setup(data=df_train, target=target_column, verbose=False, index=False, session_id=42)
-                # Pass the dynamically determined models_to_include list (or None)
                 best_model = cls_compare(fold=n_folds, turbo=True, include=models_to_include)
                 leaderboard = cls_pull()
             else:
                 reg_setup(data=df_train, target=target_column, verbose=False, index=False, session_id=42)
-                # Pass the dynamically determined models_to_include list (or None)
                 best_model = reg_compare(fold=n_folds, turbo=True, include=models_to_include)
                 leaderboard = reg_pull()
 
         st.session_state.trained_model = best_model
         st.session_state.last_metrics = leaderboard
-        # Store the columns of the *original* dataframe (or the one used for setup)
         st.session_state.train_columns = df_train.drop(columns=[target_column]).columns.tolist()
         st.success("✅ Model training completed!")
 
@@ -268,33 +234,23 @@ if uploaded_file is not None:
         except Exception:
             st.markdown("### 🔎 Model Info Not Available")
 
-        # Feature importance
         st.subheader("🌟 Feature Importance (if available)")
         try:
-            # Check for feature_importances_ or coef_ for different model types
             if hasattr(best_model, 'feature_importances_'):
                 fi = best_model.feature_importances_
             elif hasattr(best_model, 'coef_'):
                 fi = best_model.coef_
             else:
                 raise AttributeError("No suitable importance attribute found.")
-
             feat_names = st.session_state.train_columns
-            
-            # Handle multi-class/multi-output coefficients by taking the mean absolute value
             if isinstance(fi, (list, tuple)) or (hasattr(fi, 'ndim') and fi.ndim > 1):
                 fi = pd.DataFrame(fi).abs().mean(axis=0).values
-
             fi_df = pd.DataFrame({"Feature": feat_names, "Importance": fi}).sort_values("Importance", ascending=False)
             st.dataframe(fi_df.head(10))
-
-        except AttributeError:
-            st.info("Feature importance not available or model does not expose it clearly.")
         except Exception:
             st.info("Feature importance not available for this model.")
 
 
-# ---------------------- PREDICTION SECTION ----------------------
 st.subheader("🔮 Make Predictions on New Data")
 new_file = st.file_uploader("📂 Upload New CSV for Prediction", type=["csv"], key="new_csv")
 
@@ -308,20 +264,14 @@ if new_file is not None:
             new_data = pd.read_csv(io.StringIO(new_file.getvalue().decode("latin1")))
 
         train_cols = st.session_state.get("train_columns")
-        
-        # Prepare the new data to match the training data structure
         if train_cols:
             for c in train_cols:
                 if c not in new_data.columns:
-                    # Add missing columns with NaN values (PyCaret imputation handles this)
                     new_data[c] = pd.NA
-            # Reindex to ensure column order matches training data
             new_data = new_data.reindex(columns=train_cols)
-        
-        # Cast numeric columns for consistency, PyCaret handles remaining preprocessing
+
         numeric_cols_new = detect_numeric_columns(new_data)
         new_data = safe_cast_numeric(new_data, numeric_cols_new)
-
 
         st.write("📋 New Data Preview (Aligned with training features):")
         st.dataframe(new_data.head())
@@ -330,22 +280,12 @@ if new_file is not None:
             with st.spinner("🔍 Generating predictions..."):
                 if st.session_state.is_classification:
                     preds = cls_predict(st.session_state.trained_model, data=new_data)
-
-                    # Standardize prediction column names for display
                     if "prediction_label" in preds.columns:
                         preds = preds.rename(columns={"prediction_label": "Prediction"})
                     elif "Label" in preds.columns:
                         preds = preds.rename(columns={"Label": "Prediction"})
-                    
-                    # Custom example prediction conversion (can be removed if not needed)
-                    # if "Diabetes_Prediction" not in preds.columns and "Prediction" in preds.columns:
-                    #     preds["Diabetes_Prediction"] = preds["Prediction"].apply(
-                    #         lambda x: "Diabetic" if x == 1 or x == '1' or x=='Yes' else "Non-Diabetic"
-                    #     )
-
                 else:
                     preds = reg_predict(st.session_state.trained_model, data=new_data)
-                    # Standardize prediction column names for display
                     if "prediction_label" in preds.columns:
                          preds = preds.rename(columns={"prediction_label": "Prediction"})
                     elif "Label" in preds.columns:
@@ -353,6 +293,23 @@ if new_file is not None:
 
             st.subheader("🧾 Predictions")
             st.dataframe(preds)
+
+            # --- HEALTH INSIGHT ADDITION ---
+            if st.session_state.is_classification and "Prediction" in preds.columns:
+                st.subheader("🩺 Health Insights")
+                if "Score" in preds.columns:
+                    preds["Risk_Interpretation"] = preds["Score"].apply(
+                        lambda x: "⚠️ High Diabetes Risk" if x >= 0.5 else "✅ Low Diabetes Risk"
+                    )
+                    st.dataframe(preds[["Prediction", "Score", "Risk_Interpretation"]].head())
+                    st.info("These interpretations are based on model probabilities. A higher score indicates higher likelihood of diabetes.")
+                else:
+                    preds["Risk_Interpretation"] = preds["Prediction"].apply(
+                        lambda x: "⚠️ High Diabetes Risk" if str(x) in ["1", "Yes", "True"] else "✅ Low Diabetes Risk"
+                    )
+                    st.dataframe(preds[["Prediction", "Risk_Interpretation"]].head())
+            # --- END OF HEALTH INSIGHT ADDITION ---
+
             csv = preds.to_csv(index=False).encode()
             st.download_button(
                 "📥 Download Predictions CSV",
