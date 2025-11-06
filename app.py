@@ -26,8 +26,10 @@ st.set_page_config(layout="wide", page_title="🤖 Smart AutoML Dashboard")
 
 # --- FAST MODEL CONFIGURATION (New Addition for Speed) ---
 # By including only a few high-performing and fast models, we drastically reduce training time.
-FAST_CLASSIFIERS = ["lr", "dt", "rf", "lightgbm"]
-FAST_REGRESSORS = ["lr", "dt", "rf", "lightgbm", "ridge"]
+FAST_CLASSIFIERS = ["lr", "dt", "rf", "lightgbm", "xgboost", "catboost"]
+FAST_REGRESSORS = ["lr", "dt", "rf", "lightgbm", "ridge", "xgboost", "catboost"]
+# Set a threshold for what is considered a "large" dataset
+LARGE_DATASET_THRESHOLD = 5000
 
 # ---------------------- APP TITLE ----------------------
 st.title("🤖 Smart AutoML Dashboard")
@@ -65,9 +67,8 @@ def detect_target_type(df, target_col):
     prop_numeric = num_nonnull / max(1, len(df))
     # If the target column has fewer than 10 unique non-numeric values, treat as classification
     is_mostly_numeric = prop_numeric >= 0.9
-    is_low_cardinality = df[target_col].nunique(dropna=True) <= 10
     
-    # Simple heuristic: If it's low cardinality and not exclusively numeric, or if it has string data, it's classification.
+    # Simple heuristic: If it has many unique values AND is mostly numeric, it's regression.
     # We invert the check: If it has many unique values AND is mostly numeric, it's regression.
     if is_mostly_numeric and df[target_col].nunique(dropna=True) > 25:
         return False # Regression
@@ -223,33 +224,39 @@ if uploaded_file is not None:
 
         n_samples = len(df)
 
-        # --- Aggressive Speed Optimization ---
-        if n_samples > 5000:
-            st.warning("⚡ Large dataset detected — sampling 2000 rows for faster training.")
-            df = df.sample(2000, random_state=42)
+        # --- Dynamic Speed Optimization Logic ---
+        if n_samples >= LARGE_DATASET_THRESHOLD:
+            st.warning(f"⚡ Large dataset detected (>{LARGE_DATASET_THRESHOLD} rows) — sampling 2000 rows for faster training.")
+            df_train = df.sample(2000, random_state=42)
             n_folds = 2
+            # Use the fast subset of models
+            models_to_include = FAST_CLASSIFIERS if st.session_state.is_classification else FAST_REGRESSORS
+            st.info(f"⚡ Using **{len(models_to_include)}** high-speed models and **{n_folds}** folds.")
         else:
-            # Use 3 folds for quicker comparison
+            # Use the full dataset and compare all available models (by setting include=None)
+            df_train = df
             n_folds = 3
+            models_to_include = None # PyCaret compares all models by default
+            st.info(f"⚡ Using **all available** models and **{n_folds}** folds for comprehensive comparison.")
         
-        st.info(f"⚡ Using {n_folds}-fold cross-validation and a reduced model set for quick results.")
-
-
+        # NOTE: Using the *sampled* DataFrame for training if the dataset is large
+        
         with st.spinner("⏳ Setting up and comparing models..."):
             if st.session_state.is_classification:
-                cls_setup(data=df, target=target_column, verbose=False, index=False, session_id=42)
-                # Key change: using 'include' to only compare the fastest models
-                best_model = cls_compare(fold=n_folds, turbo=True, include=FAST_CLASSIFIERS)
+                cls_setup(data=df_train, target=target_column, verbose=False, index=False, session_id=42)
+                # Pass the dynamically determined models_to_include list (or None)
+                best_model = cls_compare(fold=n_folds, turbo=True, include=models_to_include)
                 leaderboard = cls_pull()
             else:
-                reg_setup(data=df, target=target_column, verbose=False, index=False, session_id=42)
-                # Key change: using 'include' to only compare the fastest models
-                best_model = reg_compare(fold=n_folds, turbo=True, include=FAST_REGRESSORS)
+                reg_setup(data=df_train, target=target_column, verbose=False, index=False, session_id=42)
+                # Pass the dynamically determined models_to_include list (or None)
+                best_model = reg_compare(fold=n_folds, turbo=True, include=models_to_include)
                 leaderboard = reg_pull()
 
         st.session_state.trained_model = best_model
         st.session_state.last_metrics = leaderboard
-        st.session_state.train_columns = df.drop(columns=[target_column]).columns.tolist()
+        # Store the columns of the *original* dataframe (or the one used for setup)
+        st.session_state.train_columns = df_train.drop(columns=[target_column]).columns.tolist()
         st.success("✅ Model training completed!")
 
         st.subheader("🏁 Model Leaderboard")
