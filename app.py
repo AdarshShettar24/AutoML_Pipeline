@@ -206,7 +206,7 @@ if uploaded_file is not None:
             st.info(f"⚡ Using **{len(models_to_include)}** high-speed models and **{n_folds}** folds.")
         else:
             df_train = df
-            n_folds = 3
+            n_folds = 2
             models_to_include = None
             st.info(f"⚡ Using **all available** models and **{n_folds}** folds for comprehensive comparison.")
         
