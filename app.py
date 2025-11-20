@@ -187,9 +187,6 @@ if uploaded_file is not None:
     st.session_state.is_classification = is_class
     st.info("📈 Problem Type: " + ("Classification" if is_class else "Regression"))
 
-    # --- ULTRA FAST MODE TOGGLE ---
-    ultra_fast = st.checkbox("⚡ Ultra Fast Mode (sample 500 rows, fewer models)", value=False)
-
     if st.button("🚀 Train Model"):
         if "Name" in df.columns:
             df = df.drop(columns=["Name"])
@@ -199,27 +196,20 @@ if uploaded_file is not None:
         if len(numeric_cols) > 0:
             df[numeric_cols] = df[numeric_cols].astype(float)
 
-        # Choose train frame based on mode
-        if ultra_fast:
-            df_train = df.sample(min(len(df), 500), random_state=42)
-            n_folds = 2
-            # only 3 fastest models
-            models_to_include = ["lr", "dt", "rf"]
-            st.info("⚡ Ultra Fast Mode enabled: using 500 rows, 1-fold CV, models = lr, dt, rf")
-        else:
-            n_samples = len(df)
-            if n_samples >= LARGE_DATASET_THRESHOLD:
-                st.warning(f"⚡ Large dataset detected ({n_samples} rows) — sampling 2000 for faster training.")
-                df_train = df.sample(2000, random_state=42)
-                n_folds = 2
-                models_to_include = FAST_CLASSIFIERS if st.session_state.is_classification else FAST_REGRESSORS
-                st.info(f"⚡ Using {len(models_to_include)} models and {n_folds} folds.")
-            else:
-                df_train = df
-                n_folds = 3
-                models_to_include = None
-                st.info(f"⚡ Using all available models and {n_folds} folds.")
+        n_samples = len(df)
 
+        if n_samples >= LARGE_DATASET_THRESHOLD:
+            st.warning(f"⚡ Large dataset detected (>{LARGE_DATASET_THRESHOLD} rows) — sampling 2000 rows for faster training.")
+            df_train = df.sample(2000, random_state=42)
+            n_folds = 2
+            models_to_include = FAST_CLASSIFIERS if st.session_state.is_classification else FAST_REGRESSORS
+            st.info(f"⚡ Using **{len(models_to_include)}** high-speed models and **{n_folds}** folds.")
+        else:
+            df_train = df
+            n_folds = 3
+            models_to_include = None
+            st.info(f"⚡ Using **all available** models and **{n_folds}** folds for comprehensive comparison.")
+        
         with st.spinner("⏳ Setting up and comparing models..."):
             if st.session_state.is_classification:
                 cls_setup(data=df_train, target=target_column, verbose=False, index=False, session_id=42)
@@ -297,7 +287,7 @@ if new_file is not None:
                 else:
                     preds = reg_predict(st.session_state.trained_model, data=new_data)
                     if "prediction_label" in preds.columns:
-                        preds = preds.rename(columns={"prediction_label": "Prediction"})
+                         preds = preds.rename(columns={"prediction_label": "Prediction"})
                     elif "Label" in preds.columns:
                         preds = preds.rename(columns={"Label": "Prediction"})
 
