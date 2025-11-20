@@ -202,7 +202,7 @@ if uploaded_file is not None:
         # Choose train frame based on mode
         if ultra_fast:
             df_train = df.sample(min(len(df), 500), random_state=42)
-            n_folds = 1
+            n_folds = 2
             # only 3 fastest models
             models_to_include = ["lr", "dt", "rf"]
             st.info("⚡ Ultra Fast Mode enabled: using 500 rows, 1-fold CV, models = lr, dt, rf")
